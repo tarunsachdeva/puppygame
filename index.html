@@ -6,10 +6,25 @@
     <style>
         body { margin: 0; overflow: hidden; }
     </style>
+    <!-- Import map to make module imports easier -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/"
+        }
+    }
+    </script>
 </head>
 <body>
-<script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
-<script>
+<!-- Removed separate script tags for three.js and OrbitControls -->
+<script type="module"> // Changed to type="module"
+    // Import THREE and OrbitControls explicitly
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // Removed window.onload wrapper, module scripts are deferred by default
+
     // Scene setup
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87ceeb);
@@ -28,6 +43,12 @@
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
+
+    // OrbitControls for mouse-driven camera
+    // Use the imported OrbitControls directly
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0, 0);
+    controls.update();
 
     // Lights
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
@@ -83,6 +104,8 @@
         if (keys['ArrowLeft']) player2.position.x -= speed;
         if (keys['ArrowRight']) player2.position.x += speed;
 
+        // Update controls before rendering
+        controls.update();
         renderer.render(scene, camera);
     }
     animate();
