@@ -1,121 +1,25 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Twin Stars Adventure</title>
+    <meta charset="utf-8">
+    <title>Puppy Runner</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; }
-    </style>
-    <!-- Import map to make module imports easier -->
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/"
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #add8e6; /* Light blue background */
         }
-    }
-    </script>
+        canvas {
+            border: 1px solid black;
+        }
+    </style>
 </head>
 <body>
-<!-- Removed separate script tags for three.js and OrbitControls -->
-<script type="module"> // Changed to type="module"
-    // Import THREE and OrbitControls explicitly
-    import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-
-    // Removed window.onload wrapper, module scripts are deferred by default
-
-    // Scene setup
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87ceeb);
-
-    // Camera (static overhead view)
-    const camera = new THREE.PerspectiveCamera(
-        75,
-        window.innerWidth / window.innerHeight,
-        0.1,
-        1000
-    );
-    camera.position.set(0, 50, 0);
-    camera.lookAt(0, 0, 0);
-
-    // Renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
-
-    // OrbitControls for mouse-driven camera
-    // Use the imported OrbitControls directly
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 0, 0);
-    controls.update();
-
-    // Lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(10, 20, 0);
-    scene.add(directionalLight);
-
-    // Player spheres
-    const sphereGeom = new THREE.SphereGeometry(1, 32, 32);
-    const player1Mat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-    const player2Mat = new THREE.MeshStandardMaterial({ color: 0x0000ff });
-    const player1 = new THREE.Mesh(sphereGeom, player1Mat);
-    const player2 = new THREE.Mesh(sphereGeom, player2Mat);
-    player1.position.set(-5, 1.5, 0);
-    player2.position.set(5, 1.5, 0);
-    scene.add(player1);
-    scene.add(player2);
-
-    // Floating platforms
-    const platformGeom = new THREE.BoxGeometry(10, 1, 10);
-    const platformMat = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
-    const platformPositions = [
-        { x: 0, y: 0, z: 0 },
-        { x: 15, y: 0, z: 15 },
-        { x: -15, y: 3, z: -15 },
-        { x: 15, y: 6, z: -15 },
-        { x: -15, y: 9, z: 15 }
-    ];
-    platformPositions.forEach(pos => {
-        const plat = new THREE.Mesh(platformGeom, platformMat);
-        plat.position.set(pos.x, pos.y, pos.z);
-        scene.add(plat);
-    });
-
-    // Keyboard controls
-    const keys = {};
-    window.addEventListener('keydown', (e) => { keys[e.code] = true; });
-    window.addEventListener('keyup', (e) => { keys[e.code] = false; });
-
-    // Animation loop
-    function animate() {
-        requestAnimationFrame(animate);
-        const speed = 0.2;
-        // Player 1 controls (WASD)
-        if (keys['KeyW']) player1.position.z -= speed;
-        if (keys['KeyS']) player1.position.z += speed;
-        if (keys['KeyA']) player1.position.x -= speed;
-        if (keys['KeyD']) player1.position.x += speed;
-        // Player 2 controls (arrow keys)
-        if (keys['ArrowUp']) player2.position.z -= speed;
-        if (keys['ArrowDown']) player2.position.z += speed;
-        if (keys['ArrowLeft']) player2.position.x -= speed;
-        if (keys['ArrowRight']) player2.position.x += speed;
-
-        // Update controls before rendering
-        controls.update();
-        renderer.render(scene, camera);
-    }
-    animate();
-
-    // Handle window resize
-    window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-</script>
+    <script src="main.js"></script>
 </body>
-</html>
+</html> 
