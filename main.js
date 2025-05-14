@@ -6,7 +6,7 @@ const config = {
     physics: {
         default: 'arcade',
         arcade: {
-            gravity: { y: 800 }, // Increased gravity
+            gravity: { y: 1200 }, // Increased gravity for faster falling
             debug: false
         }
     },
@@ -24,20 +24,27 @@ let cursors;
 let ground; // This will be the visual, scrolling ground
 let physicsGround; // Invisible platform for collision
 let treats;
-let score = 0;
+let treatsCollected = 0; // Renamed from score for clarity
+let treatsMissed = 0;
+const maxMissedTreats = 3;
+let gameOver = false;
+let gameOverText;
+let restartButton;
 let scoreText;
 let treatSpawnTimer;
 let backgroundTrees;
 let treeSpawnTimer;
 let platforms;
 let platformSpawnTimer;
-const baseScrollSpeed = 200; // Increased base speed
+const baseScrollSpeed = 400; // Increased base speed
 let gameSpeedMultiplier = 1.0; // Starts at 1x speed
 const speedIncreaseInterval = 10000; // Increase speed every 10 seconds (10000ms)
 const speedIncreaseAmount = 0.1; // Increase speed by 10%
 let assetsLoaded = false; // Will be true if spritesheet loads
 let treeLoaded = false;
 let platformLoaded = false; // Flag for platform asset
+let jumpsMade = 0;
+const maxJumps = 2;
 
 function preload() {
     // Attempt to load puppy assets
@@ -168,7 +175,7 @@ function create() {
         player = this.physics.add.sprite(playerStartX, playerStartY, 'player_fallback');
     }
 
-    player.setBounce(0.1);
+    player.setBounce(0.2);
     // Adjust physics body size AFTER scaling
     const scaleFactor = 0.25; // Make puppy smaller (adjust as needed)
     player.setScale(scaleFactor);
@@ -187,9 +194,7 @@ function create() {
     console.log('Player body offset set to (0, -20) to lower visual appearance.');
 
     player.setCollideWorldBounds(true);
-    // Prevent player from falling off the bottom - physicsGround handles this now
-    this.physics.world.bounds.bottom = config.height - groundHeight;
-
+    this.physics.world.setBounds(0, 0, config.width, config.height, true, true, true, false); // Prevent falling through bottom
 
     // Add collision between player and the invisible physics ground
     this.physics.add.collider(player, physicsGround);
@@ -209,7 +214,7 @@ function create() {
     this.physics.add.overlap(player, treats, collectTreat, null, this);
 
     // --- UI Setup ---
-    scoreText = this.add.text(16, 16, 'Treats: 0', { fontSize: '32px', fill: '#000' }).setScrollFactor(0); // Keep score fixed on screen
+    scoreText = this.add.text(16, 16, getScoreString(), { fontSize: '32px', fill: '#000' }).setScrollFactor(0);
 
     // --- Timers ---
     treatSpawnTimer = this.time.addEvent({
@@ -251,9 +256,17 @@ function create() {
         callbackScope: this,
         loop: true
     });
+
+    // Initialize gameOver flag
+    gameOver = false;
 }
 
-function update(time, delta) { // Pass time and delta
+function update(time, delta) {
+    if (gameOver) {
+        // If game is over, do nothing (or only update restart button logic if needed)
+        return;
+    }
+
     // Calculate current scroll speed
     const currentScrollSpeed = baseScrollSpeed * gameSpeedMultiplier;
 
@@ -263,36 +276,42 @@ function update(time, delta) { // Pass time and delta
     // Keep player X velocity zero - the world moves, not the player
     player.setVelocityX(0);
 
-    // Jumping - Use JustDown and blocked.down
-    if (Phaser.Input.Keyboard.JustDown(cursors.space) && player.body.blocked.down) {
-        player.setVelocityY(-450); // Increased jump velocity
+    // Jumping - Use JustDown and check jumpsMade
+    if (Phaser.Input.Keyboard.JustDown(cursors.space) && jumpsMade < maxJumps) {
+        player.setVelocityY(-450); // Keep jump velocity as is for now
+        jumpsMade++;
+        // Optional: Add a different jump sound for the second jump
+        // if (jumpsMade === 2) { this.sound.play('doubleJumpSound'); }
+        // else { this.sound.play('jumpSound'); }
     }
 
-    // --- Player Animation Control (Based on vertical movement if needed) ---
-    // If assets loaded and animation exists
+    // --- Player Animation Control (Based on vertical movement and ground status) ---
      if (assetsLoaded && player.anims) {
-         // Play run animation if on ground and not already playing - Simplified
-         // No need to check 'canAnimatePuppy' anymore
-         if (player.body.blocked.down && player.anims.isPlaying && player.anims.currentAnim?.key !== 'run') {
-              player.anims.play('run', true);
+         if (player.body.blocked.down) {
+            jumpsMade = 0; // Reset jumps when on ground
+            if (player.anims.isPlaying && player.anims.currentAnim?.key !== 'run') {
+                 player.anims.play('run', true);
+            }
+         } else {
+            // Optional: Add a jump/fall animation
+            // player.anims.stop(); // Or play a specific jump/fall frame/animation
          }
-         // Optional: Add a jump animation if not on ground
-         // else if (!player.body.blocked.down) {
-         //     player.anims.play('jump_animation_key', true); // If you have a jump animation
-         // }
 
-         // Adjust animation speed
+         // Adjust run animation speed
          const runAnim = player.anims.get('run');
          if (runAnim) {
             runAnim.frameRate = 10 * gameSpeedMultiplier; // Speed up animation
          }
      }
 
-
-    // Remove treats that go off-screen left
     treats.getChildren().forEach(treat => {
         if (treat.x < -50) {
             treat.destroy();
+            if (!gameOver) { // Only count missed if game is not already over
+                treatsMissed++;
+                scoreText.setText(getScoreString());
+                checkGameOver.call(this);
+            }
         }
     });
 
@@ -317,8 +336,8 @@ function update(time, delta) { // Pass time and delta
 
 function collectTreat(player, treat) {
     treat.destroy(); // Changed from disableBody to destroy directly
-    score += 1;
-    scoreText.setText('Treats: ' + score);
+    treatsCollected++;
+    scoreText.setText(getScoreString());
     // Optional: Add a sound effect here
     // this.sound.play('collectSound');
 }
@@ -455,4 +474,62 @@ function increaseSpeed() {
     console.log(`Game speed increased to: ${gameSpeedMultiplier.toFixed(2)}x`);
     // Optional: Adjust other factors like spawn rates maybe?
     // treatSpawnTimer.delay = Math.max(500, 2000 / gameSpeedMultiplier); // Example: Decrease treat spawn delay
+}
+
+function getScoreString() {
+    return `Collected: ${treatsCollected}\nMissed: ${treatsMissed}/${maxMissedTreats}`;
+}
+
+function checkGameOver() {
+    if (treatsMissed >= maxMissedTreats && !gameOver) {
+        gameOver = true;
+        console.log('Game Over!');
+
+        // Stop all game timers
+        treatSpawnTimer.remove(false);
+        if (treeSpawnTimer) treeSpawnTimer.remove(false);
+        if (platformSpawnTimer) platformSpawnTimer.remove(false);
+        // Consider stopping the speed increase timer too, or let it run for a visual effect
+        // this.time.removeEvent(this.speedIncreaseTimer); // If you stored it
+
+        // Stop player
+        player.setVelocity(0, 0);
+        player.anims.stop();
+        // Optional: player.setActive(false).setVisible(false);
+
+        // Display Game Over Text
+        gameOverText = this.add.text(config.width / 2, config.height / 2 - 50, 'GAME OVER', {
+            fontSize: '64px', fill: '#ff0000', stroke: '#000', strokeThickness: 4
+        }).setOrigin(0.5).setScrollFactor(0);
+
+        // Display Restart Button (simple text button)
+        restartButton = this.add.text(config.width / 2, config.height / 2 + 50, 'Restart', {
+            fontSize: '48px', fill: '#00ff00', backgroundColor: '#333', padding: { x: 20, y: 10 }
+        })
+        .setOrigin(0.5)
+        .setInteractive()
+        .setScrollFactor(0);
+
+        restartButton.on('pointerdown', () => {
+            restartGame.call(this); // Call restartGame in the context of the scene
+        });
+    }
+}
+
+function restartGame() {
+    console.log('Restarting game...');
+    // Reset game state variables explicitly before scene restart for safety
+    treatsCollected = 0;
+    treatsMissed = 0;
+    gameSpeedMultiplier = 1.0;
+    jumpsMade = 0;
+    gameOver = false; // Explicitly reset gameOver flag
+
+    // Clear existing timers before restarting to prevent duplicates if restart is quick
+    if (treatSpawnTimer) treatSpawnTimer.destroy();
+    if (treeSpawnTimer) treeSpawnTimer.destroy();
+    if (platformSpawnTimer) platformSpawnTimer.destroy();
+    // If you stored the speed increase timer: if(this.speedIncreaseTimer) this.speedIncreaseTimer.destroy();
+
+    this.scene.restart();
 } 
