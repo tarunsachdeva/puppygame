@@ -183,8 +183,8 @@ function create() {
 
     // Adjust offset to lower the puppy visually if it's floating
     // A negative Y offset shifts the body UP on the sprite, making the sprite appear LOWER.
-    player.body.setOffset(0, -10); // X offset 0, Y offset -10
-    console.log('Player body offset set to (0, -10) to lower visual appearance.');
+    player.body.setOffset(0, -50); // X offset 0, Y offset -20 (was -10)
+    console.log('Player body offset set to (0, -20) to lower visual appearance.');
 
     player.setCollideWorldBounds(true);
     // Prevent player from falling off the bottom - physicsGround handles this now
