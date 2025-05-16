@@ -36,7 +36,7 @@ let backgroundTrees;
 let treeSpawnTimer;
 let platforms;
 let platformSpawnTimer;
-const baseScrollSpeed = 400; // Increased base speed
+const baseScrollSpeed = 200; // User had changed this to 400, then reverted this part of the diff. Let's stick to 200 for now, can be adjusted.
 let gameSpeedMultiplier = 1.0; // Starts at 1x speed
 const speedIncreaseInterval = 10000; // Increase speed every 10 seconds (10000ms)
 const speedIncreaseAmount = 0.1; // Increase speed by 10%
@@ -51,51 +51,61 @@ let platformLoaded = false; // Flag for platform asset
 let jumpsMade = 0;
 const maxJumps = 2;
 
-function preload() {
-    // Attempt to load puppy assets
-    // this.load.image('puppy1', 'assets/puppy1.png');
-    // this.load.image('puppy2', 'assets/puppy2.png');
-    // this.load.image('puppy3', 'assets/puppy3.png');
-    this.load.spritesheet('puppy_run', 'assets/puppy_running_sprites.png', { frameWidth: 512, frameHeight: 512 });
+let turnText = null; // Initialize UI elements for start screen cleanup
+let timerText = null;
+let startButton1P = null;
+let startButton2P = null;
+let titleText = null;
+let speedIncreaseTimer = null;
+let player1Score = 0;
+let player2Score = 0;
+let currentPlayer = 1;
+let isTurnActive = false;
+let turnTimeLimit = 60000; // Assuming a default turnTimeLimit
+let turnTimerEvent;
 
+function preload() {
+    this.load.spritesheet('puppy_run', 'assets/puppy_running_sprites.png', { frameWidth: 512, frameHeight: 512 });
     this.load.image('ground', 'assets/platform.png');
     this.load.image('treat', 'assets/treat.png');
     this.load.image('tree', 'assets/tree3.png');
     this.load.image('platform', 'assets/platform.png');
 
     this.load.on('complete', () => {
-        console.log('Load Complete. Checking textures...');
         assetsLoaded = this.textures.exists('puppy_run');
-        console.log('Puppy spritesheet (\'puppy_run\') exists:', assetsLoaded);
+        treeLoaded = this.textures.exists('tree');
         platformLoaded = this.textures.exists('platform');
-        console.log('Platform texture exists:', platformLoaded);
+        console.log(`Assets Loaded: Puppy: ${assetsLoaded}, Tree: ${treeLoaded}, Platform: ${platformLoaded}`);
 
         if (!this.textures.exists('ground')) {
-            let graphics = this.add.graphics().fillStyle(0x8B4513, 1).fillRect(0, 0, config.width, 32);
-            graphics.generateTexture('ground_fallback', config.width, 32).destroy();
+            let g = this.add.graphics().fillStyle(0x8B4513,1).fillRect(0,0,config.width,32);
+            g.generateTexture('ground_fallback', config.width, 32).destroy();
         }
         if (!this.textures.exists('treat')) {
-            let graphics = this.add.graphics().fillStyle(0xFFFF00, 1).fillCircle(16, 16, 16);
-            graphics.generateTexture('treat_fallback', 32, 32).destroy();
+            let g = this.add.graphics().fillStyle(0xFFFF00,1).fillCircle(16,16,16);
+            g.generateTexture('treat_fallback', 32, 32).destroy();
         }
-        if (!platformLoaded) {
-            let graphics = this.add.graphics().fillStyle(0x8B4513, 1).fillRect(0, 0, 200, 20);
-            graphics.generateTexture('platform_fallback', 200, 20).destroy();
+        if (!platformLoaded && this.textures && this.add) { 
+            let g = this.add.graphics().fillStyle(0x8B4513,1).fillRect(0,0,200,20);
+            g.generateTexture('platform_fallback', 200, 20).destroy();
         }
     });
 }
 
 function create() {
     this.cameras.main.setBackgroundColor('#add8e6');
+    console.log("Create called. Current gameMode:", gameMode);
     if (gameMode === null) {
         displayStartScreen.call(this);
-    } else { 
-        startGamePlay.call(this, gameMode); // Pass the selected mode
+    } else {
+        initializeMainGame.call(this); 
     }
 }
 
 function displayStartScreen() {
+    console.log("Displaying Start Screen");
     cleanupStartScreenUI(); 
+
     titleText = this.add.text(config.width / 2, config.height / 2 - 100, 'Puppy Runner', {
         fontSize: '64px', fill: '#fff', stroke: '#000', strokeThickness: 4
     }).setOrigin(0.5);
@@ -107,14 +117,17 @@ function displayStartScreen() {
     }).setOrigin(0.5).setInteractive();
 
     startButton1P.once('pointerdown', () => {
+        console.log("1 Player button clicked");
         gameMode = 'singlePlayer';
         cleanupStartScreenUI();
-        startGamePlay.call(this, gameMode);
+        create.call(this); // Re-call create to trigger initializeMainGame
     });
+
     startButton2P.once('pointerdown', () => {
-        gameMode = 'twoPlayer';
+        console.log("2 Player button clicked, setting gameMode to twoPlayer");
+        gameMode = 'twoPlayer'; 
         cleanupStartScreenUI();
-        startGamePlay.call(this, gameMode);
+        create.call(this); // Re-call create to trigger initializeMainGame
     });
 }
 
@@ -125,24 +138,31 @@ function cleanupStartScreenUI() {
     titleText = null; startButton1P = null; startButton2P = null;
 }
 
-function startGamePlay(currentMode) {
-    console.log('startGamePlay called with mode:', currentMode);
+function initializeMainGame() {
+    console.log(`[initializeMainGame] Initializing for mode: ${gameMode}`);
+    
     // Reset core game state variables
     treatsCollected = 0; treatsMissed = 0; player1Score = 0; player2Score = 0; currentPlayer = 1;
-    gameSpeedMultiplier = 1.0; jumpsMade = 0; gameOver = false; isTurnActive = false;
+    gameSpeedMultiplier = 1.0; jumpsMade = 0; gameOver = false;
+    isTurnActive = (gameMode === 'singlePlayer');
 
-    // Clear previous game objects if any (important for restarts)
-    if (backgroundTrees) backgroundTrees.clear(true, true);
-    if (platforms) platforms.clear(true, true);
-    if (treats) treats.clear(true, true);
-    if (player) player.destroy();
-    if (scoreText) scoreText.destroy();
-    if (turnText) turnText.destroy();
-    if (timerText) timerText.destroy();
-    if (gameOverText) gameOverText.destroy();
-    if (restartButton) restartButton.destroy();
+    // Destroy old game objects and timers
+    if (player && player.active) player.destroy(); player = null;
+    if (treats) { treats.clear(true, true); treats.destroy(); treats = null;}
+    if (platforms) { platforms.clear(true, true); platforms.destroy(); platforms = null;}
+    if (backgroundTrees) { backgroundTrees.clear(true, true); backgroundTrees.destroy(); backgroundTrees = null;}
+    if (scoreText) scoreText.destroy(); scoreText = null;
+    if (gameOverText) gameOverText.destroy(); gameOverText = null;
+    if (restartButton) restartButton.destroy(); restartButton = null;
+    if (turnText) {turnText.destroy(); turnText = null;}
+    if (timerText) {timerText.destroy(); timerText = null;}
+    
+    if (treatSpawnTimer) { treatSpawnTimer.destroy(); treatSpawnTimer = null; }
+    if (treeSpawnTimer) { treeSpawnTimer.destroy(); treeSpawnTimer = null; }
+    if (platformSpawnTimer) { platformSpawnTimer.destroy(); platformSpawnTimer = null; }
+    if (speedIncreaseTimer) { speedIncreaseTimer.destroy(); speedIncreaseTimer = null; }
+    if (turnTimerEvent) { turnTimerEvent.remove(false); turnTimerEvent = null; }
 
-    // Re-initialize groups for the new game session
     backgroundTrees = this.physics.add.group({ allowGravity: false, immovable: true });
     platforms = this.physics.add.group({ allowGravity: false, immovable: true });
     treats = this.physics.add.group({ allowGravity: false });
@@ -157,7 +177,7 @@ function startGamePlay(currentMode) {
     const playerStartX = 100; const playerStartY = config.height - groundHeight - 100;
     if (assetsLoaded) {
         player = this.physics.add.sprite(playerStartX, playerStartY, 'puppy_run');
-        if (!this.anims.exists('run')) { // Create anim only if it doesn't exist
+        if (!this.anims.exists('run')) { 
             this.anims.create({ key: 'run', frames: this.anims.generateFrameNumbers('puppy_run', { start: 0, end: 3 }), frameRate: 10, repeat: -1 });
         }
         player.anims.play('run', true);
@@ -167,7 +187,8 @@ function startGamePlay(currentMode) {
         player = this.physics.add.sprite(playerStartX, playerStartY, 'player_fallback');
     }
     player.setBounce(0.2).setScale(0.25);
-    player.body.setSize(512, 512).setOffset(0, -50); // Using simplified offset from before
+    player.body.setSize(512, 512); 
+    player.body.setOffset(0, -50); 
     player.setCollideWorldBounds(true);
     this.physics.world.setBounds(0, 0, config.width, config.height, true, true, true, false);
     this.physics.add.collider(player, physicsGround);
@@ -177,108 +198,116 @@ function startGamePlay(currentMode) {
 
     scoreText = this.add.text(16, 16, getScoreString(), { fontSize: '28px', fill: '#000', lineSpacing: 4 }).setScrollFactor(0);
 
-    // Clear existing timers before creating new ones
-    if (treatSpawnTimer) treatSpawnTimer.destroy();
-    if (treeSpawnTimer) treeSpawnTimer.destroy();
-    if (platformSpawnTimer) platformSpawnTimer.destroy();
-    if (speedIncreaseTimer) speedIncreaseTimer.destroy();
-    if (turnTimerEvent) turnTimerEvent.remove(false); // Use remove for delayedCall events
+    // Timers adjusted for gameMode
+    let treatDelay = (gameMode === 'twoPlayer') ? 600 : 2000;
+    let treeMinDelay = (gameMode === 'twoPlayer') ? 800 : 1500;
+    let treeMaxDelay = (gameMode === 'twoPlayer' ? 2000 : 4000);
+    let platformMinDelay = (gameMode === 'twoPlayer') ? 2000 : 4000;
+    let platformMaxDelay = (gameMode === 'twoPlayer' ? 4000 : 7000);
+    let initialTreeCount = (gameMode === 'twoPlayer') ? 8 : 5;
 
-    if (currentMode === 'twoPlayer') {
-        turnText = this.add.text(config.width / 2, 30, '', { fontSize: '32px', fill: '#fff', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setScrollFactor(0);
-        timerText = this.add.text(config.width - 100, 30, '', { fontSize: '32px', fill: '#fff', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setScrollFactor(0);
-        treatSpawnTimer = this.time.addEvent({ delay: 600, callback: spawnTreat, callbackScope: this, loop: true });
-    } else { // singlePlayer
-        treatSpawnTimer = this.time.addEvent({ delay: 2000, callback: spawnTreat, callbackScope: this, loop: true });
-        speedIncreaseTimer = this.time.addEvent({ delay: speedIncreaseInterval, callback: increaseSpeed, callbackScope: this, loop: true });
-    }
-
+    treatSpawnTimer = this.time.addEvent({ delay: treatDelay, callback: spawnTreat, callbackScope: this, loop: true });
     if (treeLoaded) {
-        const treeDelayMin = currentMode === 'twoPlayer' ? 800 : 1500;
-        const treeDelayMax = currentMode === 'twoPlayer' ? 2000 : 4000;
-        treeSpawnTimer = this.time.addEvent({ delay: Phaser.Math.Between(treeDelayMin, treeDelayMax), callback: spawnTree, callbackScope: this, loop: true });
-        for (let i = 0; i < (currentMode === 'twoPlayer' ? 8 : 5); i++) { 
+        treeSpawnTimer = this.time.addEvent({ delay: Phaser.Math.Between(treeMinDelay, treeMaxDelay), callback: spawnTree, callbackScope: this, loop: true });
+        for (let i = 0; i < initialTreeCount; i++) { 
             spawnTree.call(this, Phaser.Math.Between(0, config.width * 1.5));
         }
     }
     const platTexKey = platformLoaded ? 'platform' : 'platform_fallback';
     if (this.textures.exists(platTexKey)) {
         platformSpawnTimer = this.time.addEvent({ 
-            delay: Phaser.Math.Between(currentMode === 'twoPlayer' ? 2000 : 4000, currentMode === 'twoPlayer' ? 4000 : 7000), 
+            delay: Phaser.Math.Between(platformMinDelay, platformMaxDelay), 
             callback: spawnPlatform, callbackScope: this, loop: true 
         });
     }
-    
-    gameOver = false; // Ensure this is false at the start of any game mode
-    if (currentMode === 'twoPlayer') {
+
+    if (gameMode === 'singlePlayer') {
+        speedIncreaseTimer = this.time.addEvent({ delay: speedIncreaseInterval, callback: increaseSpeed, callbackScope: this, loop: true });
+    } else if (gameMode === 'twoPlayer') {
+        turnText = this.add.text(config.width / 2, 30, '', { fontSize: '32px', fill: '#fff', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setScrollFactor(0);
+        timerText = this.add.text(config.width - 100, 30, '', { fontSize: '32px', fill: '#fff', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setScrollFactor(0);
         startPlayerTurn.call(this);
-    } else {
-        isTurnActive = true;
     }
+    gameOver = false; 
 }
 
 function update(time, delta) {
     if (gameMode === null) return;
-    if (gameOver || (gameMode === 'twoPlayer' && !isTurnActive)) return;
+    if (gameOver || (gameMode === 'twoPlayer' && !isTurnActive) ) return;
 
-    const currentScrollSpeedVal = (gameMode === 'twoPlayer' ? 450 : baseScrollSpeed) * (gameMode === 'twoPlayer' ? 1 : gameSpeedMultiplier);
-    ground.tilePositionX += (currentScrollSpeedVal / 60) * (delta / (1000/60)); // Frame-rate independent scrolling
-    player.setVelocityX(0);
+    const currentScrollSpeed = (gameMode === 'twoPlayer' ? 450 : baseScrollSpeed) * (gameMode === 'twoPlayer' ? 1 : gameSpeedMultiplier);
+    if (ground) ground.tilePositionX += (currentScrollSpeed / (1000/60)) * (delta / (1000/60));
 
-    if (Phaser.Input.Keyboard.JustDown(cursors.space) && jumpsMade < maxJumps) {
-        player.setVelocityY(-450); jumpsMade++;
+    if (player && player.body) {
+        player.setVelocityX(0);
+        if (Phaser.Input.Keyboard.JustDown(cursors.space) && jumpsMade < maxJumps) {
+            player.setVelocityY(-450);
+            jumpsMade++;
+        }
+        if (player.body.blocked.down) jumpsMade = 0;
+        if (assetsLoaded && player.anims && player.body.blocked.down && (!player.anims.isPlaying || player.anims.currentAnim?.key !== 'run') ) {
+            player.anims.play('run', true);
+        }
+        const runAnim = player.anims.get('run');
+        if (runAnim) runAnim.frameRate = 10 * (gameMode === 'singlePlayer' ? gameSpeedMultiplier : 1.8);
     }
 
-    if (player.body.blocked.down) jumpsMade = 0;
-    if (assetsLoaded && player.anims && player.body.blocked.down && player.anims.isPlaying && player.anims.currentAnim?.key !== 'run') {
-        player.anims.play('run', true);
-    }
-    const runAnim = player.anims.get('run');
-    if (runAnim) runAnim.frameRate = 10 * (gameMode === 'singlePlayer' ? gameSpeedMultiplier : 1.8); // Faster base anim for 2P
-
-    if (gameMode === 'twoPlayer' && isTurnActive && turnTimerEvent) {
+    if (gameMode === 'twoPlayer' && isTurnActive && turnTimerEvent && timerText) {
         const remaining = Math.max(0, turnTimerEvent.getRemainingSeconds());
         timerText.setText(`Time: ${Math.ceil(remaining).toString()}`);
     }
 
-    treats.getChildren().forEach(treat => {
-        if (treat.x < -treat.displayWidth - 20) {
-            treat.destroy();
-            if (gameMode === 'singlePlayer' && !gameOver) {
-                treatsMissed++; scoreText.setText(getScoreString()); checkGameOver.call(this);
-            } 
-        }
-    });
-    backgroundTrees.getChildren().forEach(tree => { if (tree.x < -tree.displayWidth - 50) tree.destroy(); });
-    platforms.getChildren().forEach(platform => { if (platform.x + platform.displayWidth < 0) platform.destroy(); });
+    if (treats) {
+        treats.getChildren().forEach(treat => {
+            if (treat.x < -treat.displayWidth - 20) {
+                treat.destroy();
+                if (gameMode === 'singlePlayer' && !gameOver) {
+                    treatsMissed++;
+                    if(scoreText) scoreText.setText(getScoreString());
+                    checkGameOver.call(this);
+                }
+            }
+        });
+    }
+    if (backgroundTrees) {
+        backgroundTrees.getChildren().forEach(tree => { if (tree.x < -tree.displayWidth - 50) tree.destroy(); });
+    }
+    if (platforms) {
+        platforms.getChildren().forEach(platform => { if (platform.x + platform.displayWidth < 0) platform.destroy(); });
+    }
 }
 
 function collectTreat(player, treat) {
     treat.destroy();
     if (gameMode === 'twoPlayer') {
-        treatsCollected++; // This will count for the current player's turn
-    } else { // singlePlayer
+        treatsCollected++; // This is for the current player's active turn
+    } else { 
         treatsCollected++;
     }
-    scoreText.setText(getScoreString());
+    if(scoreText) scoreText.setText(getScoreString());
 }
 
 function spawnTreat() {
+    if (!this.textures || !treats || !ground || !ground.texture || !this.textures.exists(ground.texture.key)) { console.warn("spawnTreat prerequisites not met"); return; }
     const treatTextureKey = this.textures.exists('treat') ? 'treat' : 'treat_fallback';
     const groundTopY = config.height - this.textures.get(ground.texture.key).get(0).height;
     const spawnY = Phaser.Math.Between(config.height * 0.4, groundTopY - 50);
-    const treat = treats.create(config.width + 50, spawnY, treatTextureKey);
-    const scale = 50 / treat.width;
-    treat.setScale(scale).setDepth(1);
-    treat.setVelocityX(-(gameMode === 'twoPlayer' ? 450 : baseScrollSpeed) * (gameMode === 'twoPlayer' ? 1 : gameSpeedMultiplier));
-    treat.body.setAllowGravity(false).setSize(treat.width * scale, treat.height * scale);
+    const treatObj = treats.create(config.width + 50, spawnY, treatTextureKey);
+    if (!treatObj || !treatObj.width || treatObj.width === 0) { if(treatObj && treatObj.destroy) treatObj.destroy(); return; }
+    const scale = 50 / treatObj.width;
+    treatObj.setScale(scale).setDepth(1);
+    const velX = -(gameMode === 'twoPlayer' ? 450 : baseScrollSpeed) * (gameMode === 'twoPlayer' ? 1 : gameSpeedMultiplier);
+    treatObj.setVelocityX(velX);
+    if(treatObj.body) treatObj.body.setAllowGravity(false).setSize(treatObj.width * scale, treatObj.height * scale);
 }
 
 function spawnTree(initialX = null) {
-    if (!treeLoaded) return;
+    if (!treeLoaded || !this.textures || !backgroundTrees || !ground || !ground.texture || !this.textures.exists(ground.texture.key)) { console.warn("spawnTree prerequisites not met"); return; }
     const groundTopY = config.height - this.textures.get(ground.texture.key).get(0).height;
     const initialXPos = initialX !== null ? initialX : config.width + Phaser.Math.Between(50, 200);
-    const tree = backgroundTrees.create(initialXPos, groundTopY, 'tree').setOrigin(0.5, 1);
+    const tree = backgroundTrees.create(initialXPos, groundTopY, 'tree');
+    if (!tree) return;
+    tree.setOrigin(0.5, 1);
     const layer = Phaser.Math.Between(1, 5);
     let treeBaseScale, treeDepth, treeParallaxFactor;
     switch (layer) {
@@ -292,11 +321,16 @@ function spawnTree(initialX = null) {
     tree.setScale(finalScale).setDepth(treeDepth);
     const scrollSpeedVal = (gameMode === 'twoPlayer' ? 450 : baseScrollSpeed) * treeParallaxFactor * (gameMode === 'twoPlayer' ? 1 : gameSpeedMultiplier);
     tree.setVelocityX(-scrollSpeedVal);
-    tree.body.setAllowGravity(false).setImmovable(true).setSize(tree.width * finalScale, tree.height * finalScale);
-    if (treeSpawnTimer) treeSpawnTimer.delay = Phaser.Math.Between(gameMode === 'twoPlayer' ? 800 : 1500, gameMode === 'twoPlayer' ? 2000 : 4000);
+    if (tree.body) tree.body.setAllowGravity(false).setImmovable(true).setSize(tree.width * finalScale, tree.height * finalScale);
+    if (treeSpawnTimer && treeSpawnTimer.loop) {
+        const treeDelayMin = gameMode === 'twoPlayer' ? 800 : 1500;
+        const treeDelayMax = gameMode === 'twoPlayer' ? 2000 : 4000;
+        treeSpawnTimer.delay = Phaser.Math.Between(treeDelayMin, treeDelayMax);
+    }
 }
 
 function spawnPlatform() {
+    if(!this.textures || !platformLoaded || !platforms || !ground || !ground.texture || !this.textures.exists(ground.texture.key)) { console.warn("spawnPlatform prerequisites not met"); return; }
     const platTexKey = platformLoaded ? 'platform' : 'platform_fallback';
     if (!this.textures.exists(platTexKey)) return;
     const groundTopY = config.height - this.textures.get(ground.texture.key).get(0).height;
@@ -304,17 +338,24 @@ function spawnPlatform() {
     const estJumpH = (playerJumpV * playerJumpV) / (2 * config.physics.arcade.gravity.y);
     const platAssetW = this.textures.get(platTexKey).get(0).width;
     const spawnY = Phaser.Math.Between(Math.max(100, groundTopY - estJumpH + 30), Math.max(150, groundTopY - (estJumpH * 0.4)));
-    const platW = platformLoaded ? platAssetW : 200;
+    const platW = (platTexKey === 'platform' && this.textures.exists(platTexKey)) ? platAssetW : 200;
     const platform = platforms.create(config.width + platW / 2, spawnY, platTexKey);
-    if (platformLoaded) {
-        const scaledPlatWidth = platform.width * 2; // Store scaled width before setting body
+    if(!platform || !platform.body) return;
+    if (platTexKey === 'platform' && this.textures.exists(platTexKey)) {
+        const scaledPlatWidth = platform.width * 2;
         platform.setScale(2,1).setTint(0x8B4513);
-        platform.body.setSize(scaledPlatWidth, platform.height).setOffset(0,0); // Use stored scaled width
-    } // Fallback is already sized
+        if(platform.body) platform.body.setSize(scaledPlatWidth, platform.height).setOffset(0,0);
+    }
     platform.setVelocityX(-(gameMode === 'twoPlayer' ? 450 : baseScrollSpeed) * (gameMode === 'twoPlayer' ? 1 : gameSpeedMultiplier));
-    platform.body.setAllowGravity(false).setImmovable(true);
-    platform.body.checkCollision.down = false; platform.body.checkCollision.left = false; platform.body.checkCollision.right = false; platform.body.checkCollision.up = true;
-    if (platformSpawnTimer) platformSpawnTimer.delay = Phaser.Math.Between(gameMode === 'twoPlayer' ? 2000:3000, gameMode === 'twoPlayer' ? 4000:5000);
+    if(platform.body) {
+        platform.body.setAllowGravity(false).setImmovable(true);
+        platform.body.checkCollision.down = false; platform.body.checkCollision.left = false; platform.body.checkCollision.right = false; platform.body.checkCollision.up = true;
+    }
+    if (platformSpawnTimer && platformSpawnTimer.loop) {
+        const platDelayMin = gameMode === 'twoPlayer' ? 2000 : 3000;
+        const platDelayMax = gameMode === 'twoPlayer' ? 4000 : 5000;
+        platformSpawnTimer.delay = Phaser.Math.Between(platDelayMin, platDelayMax);
+    }
 }
 
 function increaseSpeed() {
@@ -325,115 +366,131 @@ function increaseSpeed() {
 }
 
 function getScoreString() {
-    if (gameMode === 'twoPlayer') return `P1: ${player1Score} | P2: ${player2Score}`;
+    if (gameMode === 'twoPlayer') return `P1: ${player1Score} | P2: ${player2Score}\nTurn: P${currentPlayer} | Treats This Turn: ${treatsCollected}`;
     return `Collected: ${treatsCollected}\nMissed: ${treatsMissed}/${maxMissedTreats}`;
 }
 
 function checkGameOver() {
     if (gameMode === 'singlePlayer' && treatsMissed >= maxMissedTreats && !gameOver) {
         gameOver = true; console.log('Game Over! Single Player');
+        isTurnActive = false;
         if (treatSpawnTimer) treatSpawnTimer.remove(false);
         if (treeSpawnTimer) treeSpawnTimer.remove(false);
         if (platformSpawnTimer) platformSpawnTimer.remove(false);
         if (speedIncreaseTimer) speedIncreaseTimer.remove(false);
-        player.setVelocity(0,0).anims.stop();
+        if (player) player.setVelocity(0,0).anims.stop();
+        if (gameOverText) gameOverText.destroy();
         gameOverText = this.add.text(config.width/2, config.height/2 - 50, 'GAME OVER', {fontSize:'64px',fill:'#ff0000',stroke:'#000',strokeThickness:4}).setOrigin(0.5).setScrollFactor(0);
+        if (restartButton) restartButton.destroy();
         restartButton = this.add.text(config.width/2, config.height/2 + 50, 'Restart', {fontSize:'48px',fill:'#0f0',backgroundColor:'#333',padding:{x:20,y:10}}).setOrigin(0.5).setInteractive().setScrollFactor(0);
         restartButton.once('pointerdown', () => { restartGame.call(this); });
     }
 }
 
-function restartGame() { 
+function restartGame() {
     console.log('Restarting (back to menu)...');
-    gameMode = null; // Reset to show start screen
-    // No need to pass mode, create() will handle null gameMode
+    gameMode = null;
+    cleanupStartScreenUI();
+    if (gameOverText) { gameOverText.destroy(); gameOverText = null; }
+    if (restartButton) { restartButton.destroy(); restartButton = null; }
+    if (scoreText) {scoreText.destroy(); scoreText = null; }
+    if (turnText) { turnText.destroy(); turnText = null; }
+    if (timerText) { timerText.destroy(); timerText = null; }
+    if (treatSpawnTimer) { treatSpawnTimer.destroy(); treatSpawnTimer = null; }
+    if (treeSpawnTimer) { treeSpawnTimer.destroy(); treeSpawnTimer = null; }
+    if (platformSpawnTimer) { platformSpawnTimer.destroy(); platformSpawnTimer = null; }
+    if (speedIncreaseTimer) { speedIncreaseTimer.destroy(); speedIncreaseTimer = null; }
+    if (turnTimerEvent) { turnTimerEvent.remove(false); turnTimerEvent = null; }
     this.scene.restart();
 }
 
 // --- Two Player Mode Specific Functions ---
 function startPlayerTurn() {
+    console.log(`Starting turn for Player ${currentPlayer}`);
     isTurnActive = true;
-    treatsCollected = 0; // This tracks score for the CURRENT turn
+    treatsCollected = 0; // Reset treats for this specific turn
 
-    if (currentPlayer === 1) {
-        turnText.setText('Player 1 Turn');
+    if (turnText) turnText.setText(`Player ${currentPlayer} Turn`);
+    if (timerText) timerText.setText(`Time: ${turnTimeLimit / 1000}`);
+    if (scoreText) scoreText.setText(getScoreString());
+
+    if (player) {
+        player.setPosition(100, config.height - (ground ? ground.height:32) - 100).setVelocity(0,0);
+        if (!player.anims.isPlaying || player.anims.currentAnim?.key !== 'run') player.anims.play('run',true);
     } else {
-        turnText.setText('Player 2 Turn');
+        console.error("Player object is null in startPlayerTurn!"); return;
     }
-    timerText.setText(`Time: ${turnTimeLimit / 1000}`);
-    scoreText.setText(getScoreString()); // Show P1 vs P2 scores
-
-    player.setPosition(100, config.height - this.textures.get(ground.texture.key).get(0).height - 100).setVelocity(0,0);
-    if (player.anims.currentAnim?.key !== 'run' || !player.anims.isPlaying) player.anims.play('run',true);
     jumpsMade = 0;
-    treats.clear(true, true); platforms.clear(true, true);
+
+    treats.clear(true, true);
+    platforms.clear(true, true);
     backgroundTrees.clear(true, true);
-    if (treeLoaded) { 
-        for (let i = 0; i < 8; i++) { 
-            spawnTree.call(this, Phaser.Math.Between(0, config.width * 1.5)); 
+    if (treeLoaded) {
+        for (let i = 0; i < 8; i++) {
+            spawnTree.call(this, Phaser.Math.Between(0, config.width * 1.5));
         }
     }
 
     if (turnTimerEvent) turnTimerEvent.remove(false);
     turnTimerEvent = this.time.delayedCall(turnTimeLimit, endPlayerTurn, [], this);
-    console.log(`Player ${currentPlayer} turn started. Target score var: P${currentPlayer}Score`);
 
-    // Ensure spawn timers are specific for 2P turn
-    if (treatSpawnTimer) treatSpawnTimer.remove(false); 
+    if (treatSpawnTimer) treatSpawnTimer.destroy();
     treatSpawnTimer = this.time.addEvent({ delay: 600, callback: spawnTreat, callbackScope: this, loop: true });
-    if (treeSpawnTimer) treeSpawnTimer.remove(false); 
+    if (treeSpawnTimer) treeSpawnTimer.destroy();
     if (treeLoaded) {
         treeSpawnTimer = this.time.addEvent({ delay: Phaser.Math.Between(800, 2000), callback: spawnTree, callbackScope: this, loop: true });
     }
-    if (platformSpawnTimer) platformSpawnTimer.remove(false); 
-    const platTexKey = platformLoaded ? 'platform' : 'platform_fallback';
-    if (this.textures.exists(platTexKey)){
+    if (platformSpawnTimer) platformSpawnTimer.destroy();
+    const platKey = platformLoaded ? 'platform' : 'platform_fallback';
+    if (this.textures.exists(platKey)){
         platformSpawnTimer = this.time.addEvent({delay: Phaser.Math.Between(2000,4000), callback: spawnPlatform, callbackScope: this, loop: true});
     }
 }
 
 function endPlayerTurn() {
+    console.log(`Ending turn for Player ${currentPlayer}`);
     isTurnActive = false;
     if (turnTimerEvent) turnTimerEvent.remove(false);
 
     if (currentPlayer === 1) {
-        player1Score = treatsCollected; // Store P1's score from this turn
-        console.log(`Player 1 turn ENDED. Score for turn: ${treatsCollected}, P1 Total: ${player1Score}`);
+        player1Score = treatsCollected;
+        console.log(`Player 1 ENDED. Turn Score: ${treatsCollected}, P1 Total: ${player1Score}`);
         currentPlayer = 2;
-        this.time.delayedCall(1500, () => startPlayerTurn.call(this), [], this);
+        if (turnText) turnText.setText('Player 2 Get Ready!');
+        this.time.delayedCall(2500, () => startPlayerTurn.call(this), [], this);
     } else {
-        player2Score = treatsCollected; // Store P2's score from this turn
-        console.log(`Player 2 turn ENDED. Score for turn: ${treatsCollected}, P2 Total: ${player2Score}`);
+        player2Score = treatsCollected;
+        console.log(`Player 2 ENDED. Turn Score: ${treatsCollected}, P2 Total: ${player2Score}`);
         endTwoPlayerGame.call(this);
     }
 }
 
 function endTwoPlayerGame() {
-    gameOver = true; 
+    console.log('Ending Two Player Game. Final Scores -> P1:', player1Score, 'P2:', player2Score);
+    gameOver = true;
     isTurnActive = false;
     if (turnTimerEvent) turnTimerEvent.remove(false);
-    
+
     if (treatSpawnTimer && treatSpawnTimer.loop) treatSpawnTimer.remove(false);
     if (treeSpawnTimer && treeSpawnTimer.loop) treeSpawnTimer.remove(false);
     if (platformSpawnTimer && platformSpawnTimer.loop) platformSpawnTimer.remove(false);
 
-    player.setVelocity(0,0).anims.stop();
+    if (player) { player.setVelocity(0,0).anims.stop(); }
 
     let winnerMsg = "";
     if (player1Score > player2Score) winnerMsg = "Player 1 Wins!";
     else if (player2Score > player1Score) winnerMsg = "Player 2 Wins!";
     else winnerMsg = "It's a Tie!";
 
-    if (gameOverText) gameOverText.destroy(); // Clear previous if any
-    gameOverText = this.add.text(config.width/2, config.height/2 - 80, winnerMsg, {fontSize:'56px',fill:'#fff',stroke:'#000',strokeThickness:4}).setOrigin(0.5).setScrollFactor(0);
-    this.add.text(config.width/2, config.height/2, `P1: ${player1Score} - P2: ${player2Score}`, {fontSize:'40px',fill:'#fff',stroke:'#000',strokeThickness:3}).setOrigin(0.5).setScrollFactor(0);
-    
+    if (gameOverText) gameOverText.destroy();
+    gameOverText = this.add.text(config.width/2, config.height/2 - 100, winnerMsg, {fontSize:'56px',fill:'#fff',stroke:'#000',strokeThickness:4}).setOrigin(0.5).setScrollFactor(0);
+    this.add.text(config.width/2, config.height/2 - 20, `P1: ${player1Score} Treats`, {fontSize:'40px',fill:'#ddd',stroke:'#000',strokeThickness:3}).setOrigin(0.5).setScrollFactor(0);
+    this.add.text(config.width/2, config.height/2 + 20, `P2: ${player2Score} Treats`, {fontSize:'40px',fill:'#ddd',stroke:'#000',strokeThickness:3}).setOrigin(0.5).setScrollFactor(0);
+
     if (restartButton) restartButton.destroy();
     restartButton = this.add.text(config.width/2, config.height/2 + 100, 'Main Menu', {fontSize:'48px',fill:'#0f0',backgroundColor:'#333',padding:{x:20,y:10}}).setOrigin(0.5).setInteractive().setScrollFactor(0);
     restartButton.once('pointerdown', () => {
-        gameMode = null; 
-        this.scene.restart(); 
+        gameMode = null;
+        this.scene.restart();
     });
 }
-
-// The main Phaser.Game instance remains the same as it references the 'config' object
