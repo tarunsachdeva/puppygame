@@ -43,6 +43,8 @@ const speedIncreaseAmount = 0.1; // Increase speed by 10%
 
 // --- Game State Variables ---
 let gameMode = null; // null, 'singlePlayer', 'twoPlayer'
+let isPaused = false;
+let pauseTextDisplay = null;
 // Add other 2P variables later: currentPlayer, player1Score, etc.
 
 let assetsLoaded; // Explicit global declaration, will be set in preload complete
@@ -163,6 +165,10 @@ function initializeMainGame() {
     if (speedIncreaseTimer) { speedIncreaseTimer.destroy(); speedIncreaseTimer = null; }
     if (turnTimerEvent) { turnTimerEvent.remove(false); turnTimerEvent = null; }
 
+    // Reset pause state for the new game
+    isPaused = false;
+    if (pauseTextDisplay) { pauseTextDisplay.destroy(); pauseTextDisplay = null; }
+
     backgroundTrees = this.physics.add.group({ allowGravity: false, immovable: true });
     platforms = this.physics.add.group({ allowGravity: false, immovable: true });
     treats = this.physics.add.group({ allowGravity: false });
@@ -230,10 +236,14 @@ function initializeMainGame() {
         startPlayerTurn.call(this);
     }
     gameOver = false; 
+
+    // Setup ESC key listener for pause/resume
+    this.input.keyboard.off('keydown-ESC'); // Remove previous listener to avoid duplicates
+    this.input.keyboard.on('keydown-ESC', togglePauseState, this);
 }
 
 function update(time, delta) {
-    if (gameMode === null) return;
+    if (gameMode === null || isPaused) return; // Stop updates if on start screen or paused
     if (gameOver || (gameMode === 'twoPlayer' && !isTurnActive) ) return;
 
     const currentScrollSpeed = (gameMode === 'twoPlayer' ? 450 : baseScrollSpeed) * (gameMode === 'twoPlayer' ? 1 : gameSpeedMultiplier);
@@ -517,4 +527,65 @@ function endTwoPlayerGame() {
         gameMode = null;
         this.scene.restart();
     });
+}
+
+function togglePauseState() {
+    // Do not allow pausing on the start screen or if the game is over
+    if (gameMode === null || gameOver) {
+        return;
+    }
+
+    // In two-player mode, prevent pausing during the "Get Ready!" screen transition
+    // This is a simple check; a more robust method might use a dedicated transition flag.
+    if (gameMode === 'twoPlayer' && !isTurnActive && !isPaused) {
+        // Heuristic: Check if the turnText indicates a "Get Ready!" message.
+        if (turnText && turnText.text.includes('Get Ready')) {
+            return;
+        }
+    }
+
+    isPaused = !isPaused;
+
+    if (isPaused) {
+        // Pause the game
+        this.physics.pause();
+        if (player && player.anims) {
+            player.anims.pause();
+        }
+
+        if (treatSpawnTimer) treatSpawnTimer.paused = true;
+        if (treeSpawnTimer && treeSpawnTimer.loop) treeSpawnTimer.paused = true;
+        if (platformSpawnTimer && platformSpawnTimer.loop) platformSpawnTimer.paused = true;
+        if (speedIncreaseTimer && gameMode === 'singlePlayer' && speedIncreaseTimer.loop) speedIncreaseTimer.paused = true;
+        if (turnTimerEvent && gameMode === 'twoPlayer') turnTimerEvent.paused = true;
+
+
+        if (pauseTextDisplay) pauseTextDisplay.destroy();
+        pauseTextDisplay = this.add.text(config.width / 2, config.height / 2, 'PAUSED', {
+            fontSize: '60px',
+            fill: '#ffffff',
+            backgroundColor: 'rgba(0,0,0,0.7)',
+            padding: { x: 20, y: 10 },
+            stroke: '#000000',
+            strokeThickness: 3
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(100); // Ensure it's on top
+
+    } else {
+        // Resume the game
+        this.physics.resume();
+        if (player && player.anims && player.anims.isPaused) {
+            player.anims.resume();
+        }
+
+        if (treatSpawnTimer) treatSpawnTimer.paused = false;
+        if (treeSpawnTimer && treeSpawnTimer.loop) treeSpawnTimer.paused = false;
+        if (platformSpawnTimer && platformSpawnTimer.loop) platformSpawnTimer.paused = false;
+        if (speedIncreaseTimer && gameMode === 'singlePlayer' && speedIncreaseTimer.loop) speedIncreaseTimer.paused = false;
+        if (turnTimerEvent && gameMode === 'twoPlayer') turnTimerEvent.paused = false;
+
+        if (pauseTextDisplay) {
+            pauseTextDisplay.destroy();
+            pauseTextDisplay = null;
+        }
+    }
 }
