@@ -341,33 +341,82 @@ function spawnTree(initialX = null) {
 }
 
 function spawnPlatform() {
-    // Prerequisite checks that don't depend on 'platform.png' specifically
     if(!this.textures || !platforms || !ground || !ground.texture || !this.textures.exists(ground.texture.key)) {
         console.warn("spawnPlatform general prerequisites not met (textures, platforms group, ground)");
         return;
     }
 
     const platTexKey = platformLoaded ? 'platform' : 'platform_fallback';
-
-    // Ensure the chosen texture (original or fallback) actually exists
     if (!this.textures.exists(platTexKey)) {
         console.warn(`spawnPlatform: Chosen texture key '${platTexKey}' does not exist.`);
         return;
     }
-    const groundTopY = config.height - this.textures.get(ground.texture.key).get(0).height;
+
+    // Platform visual and physics body height determination
+    let platformTexture = this.textures.get(platTexKey);
+    let platformFrame = platformTexture.get(0);
+    let platformOriginalHeight = platformFrame.height; // 20 for fallback, 32 for platform.png
+    let platformDisplayHeight = platformOriginalHeight; // Assuming Y scale is 1 for both cases after setup
+    if (platTexKey === 'platform') {
+        // platform.png is scaled (2,1), its display height remains its original texture height (32)
+        platformDisplayHeight = 32;
+    } else {
+        platformDisplayHeight = 20; // Fallback is 20px high
+    }
+    const platformHalfHeight = platformDisplayHeight / 2;
+
+    // Player jump mechanics (values derived from player setup and physics)
+    const playerSpriteVisualHalfHeight = (512 * 0.25) / 2; // 64
+    const playerBodyScaledOffsetY = (-50 * 0.25); // -12.5
+    const playerFeetOffsetFromCenterY = -playerSpriteVisualHalfHeight - playerBodyScaledOffsetY + (512 * 0.25); // player.y to feet = 51.5
+    
+    const groundTextureHeight = this.textures.get(ground.texture.key).get(0).height;
+    const groundTopYAbs = config.height - groundTextureHeight; // e.g., 568
+    const playerYGroundCenter = groundTopYAbs - playerFeetOffsetFromCenterY; // e.g., 516.5
+
     const playerJumpV = -450;
-    const estJumpH = (playerJumpV * playerJumpV) / (2 * config.physics.arcade.gravity.y);
-    const platAssetW = this.textures.get(platTexKey).get(0).width;
-    const spawnY = Phaser.Math.Between(Math.max(100, groundTopY - estJumpH + 30), Math.max(150, groundTopY - (estJumpH * 0.4)));
-    const platW = (platTexKey === 'platform' && this.textures.exists(platTexKey)) ? platAssetW : 200;
-    const platform = platforms.create(config.width + platW / 2, spawnY, platTexKey);
+    const estJumpHRise = (playerJumpV * playerJumpV) / (2 * config.physics.arcade.gravity.y); // Approx 84.375
+    
+    const playerYPeakCenter = playerYGroundCenter - estJumpHRise; // e.g., 432.125
+    const playerFeetAtPeakY = playerYPeakCenter + playerFeetOffsetFromCenterY; // e.g., 483.625
+
+    // Define target Y range for platform TOPS
+    const lowestPlatTopTarget = playerFeetAtPeakY - 20; // Reachable from ground jump (20px margin)
+    const highestPlatTopTarget = Math.max(120, playerFeetAtPeakY - estJumpHRise * 0.9); // Higher, but not off-screen (min top Y 120)
+
+    // Convert top Y-range to center Y-range
+    let spawnYMinCenter = highestPlatTopTarget + platformHalfHeight;
+    let spawnYMaxCenter = lowestPlatTopTarget + platformHalfHeight;
+
+    // Ensure min_center_y is not greater than max_center_y for Phaser.Math.Between
+    if (spawnYMinCenter > spawnYMaxCenter) {
+        // This could happen if estJumpHRise * 0.9 makes highestPlatTopTarget very low (e.g. below lowestPlatTopTarget)
+        // Or if the screen top clamp (120) makes it higher than lowestPlatTopTarget
+        // In such a case, let's make the range tighter or default to a safe spot
+        console.warn("Platform Y range calculation resulted in min > max. Adjusting.");
+        //spawnYMinCenter = spawnYMaxCenter - 50; // Create a small range below max
+        // Fallback to a slightly narrower range based on lowestPlatTopTarget
+        spawnYMinCenter = lowestPlatTopTarget + platformHalfHeight - 50; // 50px variation upwards from lowest
+        spawnYMaxCenter = lowestPlatTopTarget + platformHalfHeight;
+        if (spawnYMinCenter < 100 + platformHalfHeight) spawnYMinCenter = 100 + platformHalfHeight; // Absolute min
+    }
+    
+    const finalSpawnY = Phaser.Math.Between(spawnYMinCenter, spawnYMaxCenter);
+
+    const platAssetW = platformFrame.width;
+    const platform = platforms.create(config.width + platAssetW / 2, finalSpawnY, platTexKey);
     if(!platform || !platform.body) return;
     platform.setDepth(0);
+
     if (platTexKey === 'platform' && this.textures.exists(platTexKey)) {
-        const scaledPlatWidth = platform.width * 2;
+        const actualTextureWidth = platformFrame.width; // platform.png texture width (200)
         platform.setScale(2,1).setTint(0x8B4513);
-        if(platform.body) platform.body.setSize(scaledPlatWidth, platform.height).setOffset(0,0);
+        // Body size should use texture width * scale, and texture height * scale
+        if(platform.body) platform.body.setSize(actualTextureWidth * 2, platformOriginalHeight * 1).setOffset(0,0);
+    } else {
+        // Fallback already has correct body size from its texture (200x20)
     }
+
     platform.setVelocityX(-(gameMode === 'twoPlayer' ? 450 : baseScrollSpeed) * (gameMode === 'twoPlayer' ? 1 : gameSpeedMultiplier));
     if(platform.body) {
         platform.body.setAllowGravity(false).setImmovable(true);
