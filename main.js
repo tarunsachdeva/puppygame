@@ -190,6 +190,7 @@ function initializeMainGame() {
     player.body.setSize(512, 512); 
     player.body.setOffset(0, -50); 
     player.setCollideWorldBounds(true);
+    player.setDepth(2);
     this.physics.world.setBounds(0, 0, config.width, config.height, true, true, true, false);
     this.physics.add.collider(player, physicsGround);
     this.physics.add.collider(player, platforms);
@@ -351,6 +352,7 @@ function spawnPlatform() {
     const platW = (platTexKey === 'platform' && this.textures.exists(platTexKey)) ? platAssetW : 200;
     const platform = platforms.create(config.width + platW / 2, spawnY, platTexKey);
     if(!platform || !platform.body) return;
+    platform.setDepth(0);
     if (platTexKey === 'platform' && this.textures.exists(platTexKey)) {
         const scaledPlatWidth = platform.width * 2;
         platform.setScale(2,1).setTint(0x8B4513);
