@@ -120,14 +120,14 @@ function displayStartScreen() {
         console.log("1 Player button clicked");
         gameMode = 'singlePlayer';
         cleanupStartScreenUI();
-        create.call(this); // Re-call create to trigger initializeMainGame
+        initializeMainGame.call(this); // Directly initialize the game
     });
 
     startButton2P.once('pointerdown', () => {
         console.log("2 Player button clicked, setting gameMode to twoPlayer");
         gameMode = 'twoPlayer'; 
         cleanupStartScreenUI();
-        create.call(this); // Re-call create to trigger initializeMainGame
+        initializeMainGame.call(this); // Directly initialize the game
     });
 }
 
@@ -330,9 +330,19 @@ function spawnTree(initialX = null) {
 }
 
 function spawnPlatform() {
-    if(!this.textures || !platformLoaded || !platforms || !ground || !ground.texture || !this.textures.exists(ground.texture.key)) { console.warn("spawnPlatform prerequisites not met"); return; }
+    // Prerequisite checks that don't depend on 'platform.png' specifically
+    if(!this.textures || !platforms || !ground || !ground.texture || !this.textures.exists(ground.texture.key)) {
+        console.warn("spawnPlatform general prerequisites not met (textures, platforms group, ground)");
+        return;
+    }
+
     const platTexKey = platformLoaded ? 'platform' : 'platform_fallback';
-    if (!this.textures.exists(platTexKey)) return;
+
+    // Ensure the chosen texture (original or fallback) actually exists
+    if (!this.textures.exists(platTexKey)) {
+        console.warn(`spawnPlatform: Chosen texture key '${platTexKey}' does not exist.`);
+        return;
+    }
     const groundTopY = config.height - this.textures.get(ground.texture.key).get(0).height;
     const playerJumpV = -450;
     const estJumpH = (playerJumpV * playerJumpV) / (2 * config.physics.arcade.gravity.y);
@@ -390,17 +400,29 @@ function checkGameOver() {
 function restartGame() {
     console.log('Restarting (back to menu)...');
     gameMode = null;
-    cleanupStartScreenUI();
+
+    // Null out global references to Phaser game objects
+    player = null;
+    ground = null; 
+    physicsGround = null; 
+    treats = null;
+    backgroundTrees = null;
+    platforms = null;
+    // Null out UI elements that might persist or cause issues
+    // scoreText is recreated in initializeMainGame, but good to null here too.
+    if (scoreText) {scoreText.destroy(); scoreText = null; }
     if (gameOverText) { gameOverText.destroy(); gameOverText = null; }
     if (restartButton) { restartButton.destroy(); restartButton = null; }
-    if (scoreText) {scoreText.destroy(); scoreText = null; }
     if (turnText) { turnText.destroy(); turnText = null; }
     if (timerText) { timerText.destroy(); timerText = null; }
+    
+    // Clear timers
     if (treatSpawnTimer) { treatSpawnTimer.destroy(); treatSpawnTimer = null; }
     if (treeSpawnTimer) { treeSpawnTimer.destroy(); treeSpawnTimer = null; }
     if (platformSpawnTimer) { platformSpawnTimer.destroy(); platformSpawnTimer = null; }
     if (speedIncreaseTimer) { speedIncreaseTimer.destroy(); speedIncreaseTimer = null; }
     if (turnTimerEvent) { turnTimerEvent.remove(false); turnTimerEvent = null; }
+
     this.scene.restart();
 }
 
