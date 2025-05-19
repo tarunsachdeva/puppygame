@@ -68,7 +68,7 @@ let turnTimerEvent;
 
 function preload() {
     this.load.spritesheet('puppy_run', 'assets/puppy_running_sprites.png', { frameWidth: 512, frameHeight: 512 });
-    this.load.image('ground', 'assets/platform.png');
+    this.load.image('ground', 'assets/ground.png');
     this.load.image('treat', 'assets/treat.png');
     this.load.image('tree', 'assets/tree3.png');
     this.load.image('platform', 'assets/platform.png');
@@ -108,7 +108,7 @@ function displayStartScreen() {
     console.log("Displaying Start Screen");
     cleanupStartScreenUI(); 
 
-    titleText = this.add.text(config.width / 2, config.height / 2 - 100, 'Puppy Runner', {
+    titleText = this.add.text(config.width / 2, config.height / 2 - 100, 'POWER PUPS 🐶', {
         fontSize: '64px', fill: '#fff', stroke: '#000', strokeThickness: 4
     }).setOrigin(0.5);
     startButton1P = this.add.text(config.width / 2, config.height / 2 + 20, '1 Player', {
