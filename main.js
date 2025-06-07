@@ -66,12 +66,18 @@ let isTurnActive = false;
 let turnTimeLimit = 60000; // Assuming a default turnTimeLimit
 let turnTimerEvent;
 
+let backgroundMusic;
+let boingSound;
+
 function preload() {
     this.load.spritesheet('puppy_run', 'assets/puppy_running_sprites.png', { frameWidth: 512, frameHeight: 512 });
     this.load.image('ground', 'assets/ground.png');
     this.load.image('treat', 'assets/treat.png');
     this.load.image('tree', 'assets/tree3.png');
     this.load.image('platform', 'assets/platform.png');
+
+    this.load.audio('boing', 'assets/boing.mp3');
+    this.load.audio('birds', 'assets/birds.mp3');
 
     this.load.on('complete', () => {
         assetsLoaded = this.textures.exists('puppy_run');
@@ -97,6 +103,12 @@ function preload() {
 function create() {
     this.cameras.main.setBackgroundColor('#add8e6');
     console.log("Create called. Current gameMode:", gameMode);
+
+    if (!backgroundMusic) {
+        backgroundMusic = this.sound.add('birds', { loop: true, volume: 0.5 });
+        backgroundMusic.play();
+    }
+    
     if (gameMode === null) {
         displayStartScreen.call(this);
     } else {
@@ -290,6 +302,10 @@ function update(time, delta) {
 
 function collectTreat(player, treat) {
     treat.destroy();
+    if (!boingSound) {
+        boingSound = this.sound.add('boing');
+    }
+    boingSound.play();
     if (gameMode === 'twoPlayer') {
         treatsCollected++; // This is for the current player's active turn
     } else { 
@@ -602,6 +618,10 @@ function togglePauseState() {
             player.anims.pause();
         }
 
+        if (backgroundMusic) {
+            backgroundMusic.pause();
+        }
+
         if (treatSpawnTimer) treatSpawnTimer.paused = true;
         if (treeSpawnTimer && treeSpawnTimer.loop) treeSpawnTimer.paused = true;
         if (platformSpawnTimer && platformSpawnTimer.loop) platformSpawnTimer.paused = true;
@@ -624,6 +644,10 @@ function togglePauseState() {
         this.physics.resume();
         if (player && player.anims && player.anims.isPaused) {
             player.anims.resume();
+        }
+
+        if (backgroundMusic) {
+            backgroundMusic.resume();
         }
 
         if (treatSpawnTimer) treatSpawnTimer.paused = false;
